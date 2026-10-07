@@ -164,8 +164,8 @@ class TestViewerRerunInitArgs(unittest.TestCase):
                     self.assertIn("default_blueprint", call_args[1])
                     self.assertEqual(call_args[1]["default_blueprint"], self.mock_blueprint)
 
-    def test_record_to_rrd_calls_save(self):
-        """Test that providing record_to_rrd calls rr.save() with blueprint."""
+    def test_record_to_rrd_preserves_blueprint(self):
+        """Preserve the default blueprint when recording alongside a viewer."""
         with patch("newton._src.viewer.viewer_rerun.rr", self.mock_rr):
             with patch("newton._src.viewer.viewer_rerun.rrb", self.mock_rrb):
                 with patch("newton._src.viewer.viewer_rerun.is_jupyter_notebook", return_value=False):
@@ -176,10 +176,9 @@ class TestViewerRerunInitArgs(unittest.TestCase):
                         warnings.simplefilter("ignore")
                         _ = ViewerRerun(record_to_rrd=test_path)
 
-                    # Verify rr.save was called
-                    self.mock_rr.save.assert_called_once()
-                    call_args = self.mock_rr.save.call_args
-                    self.assertEqual(call_args[0][0], test_path)
+                    self.mock_rr.FileSink.assert_called_once_with(test_path)
+                    self.mock_rr.set_sinks.assert_called_once()
+                    call_args = self.mock_rr.set_sinks.call_args
                     self.assertIn("default_blueprint", call_args[1])
                     self.assertEqual(call_args[1]["default_blueprint"], self.mock_blueprint)
 

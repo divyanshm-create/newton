@@ -175,26 +175,44 @@ class ViewerRerun(ViewerBase):
         blueprint = self._get_blueprint()
         rr.init(self.app_id, recording_id=self.rec_id, default_blueprint=blueprint)
 
-        if record_to_rrd is not None:
-            rr.save(record_to_rrd, default_blueprint=blueprint)
-
         try:
             self._mesh3d_params = set(inspect.signature(rr.Mesh3D).parameters)
         except Exception:
             self._mesh3d_params = set()
 
         self._grpc_server_uri = None
+        self._grpc_server_recording = None
 
-        # Launch viewer client
+        # Connection helpers replace the active sink, so recording and live viewing
+        # must be attached together after the viewer server has started.
+        sinks = [rr.FileSink(record_to_rrd)] if record_to_rrd is not None else []
         self.is_jupyter_notebook = is_jupyter_notebook()
         if address is not None:
-            rr.connect_grpc(address)
+            if record_to_rrd is None:
+                rr.connect_grpc(address)
+            else:
+                sinks.append(rr.GrpcSink(address))
         elif not self.is_jupyter_notebook:
             if serve_web_viewer:
-                self._grpc_server_uri = rr.serve_grpc(grpc_port=grpc_port, default_blueprint=blueprint)
+                if record_to_rrd is None:
+                    self._grpc_server_uri = rr.serve_grpc(grpc_port=grpc_port, default_blueprint=blueprint)
+                else:
+                    # Keep the server alive independently of the data stream whose
+                    # sinks are replaced below.
+                    self._grpc_server_recording = rr.RecordingStream(self.app_id)
+                    self._grpc_server_uri = rr.serve_grpc(
+                        grpc_port=grpc_port, recording=self._grpc_server_recording, default_blueprint=blueprint
+                    )
+                    sinks.append(rr.GrpcSink(self._grpc_server_uri))
                 rr.serve_web_viewer(connect_to=self._grpc_server_uri, web_port=web_port)
             else:
-                rr.spawn(port=grpc_port)
+                if record_to_rrd is None:
+                    rr.spawn(port=grpc_port)
+                else:
+                    rr.spawn(port=grpc_port, connect=False)
+                    sinks.append(rr.GrpcSink(f"rerun+http://127.0.0.1:{grpc_port}/proxy"))
+        if sinks:
+            rr.set_sinks(*sinks, default_blueprint=blueprint)
 
         # Make sure the timeline is set up
         rr.set_time("time", timestamp=0.0)
@@ -524,6 +542,9 @@ class ViewerRerun(ViewerBase):
             rr.disconnect()
         except Exception:
             pass
+        if self._grpc_server_recording is not None:
+            self._grpc_server_recording.disconnect()
+            self._grpc_server_recording = None
 
     @override
     def apply_forces(self, state: newton.State):

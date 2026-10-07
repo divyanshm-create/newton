@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- Preserve `ViewerRerun(record_to_rrd=...)` simulation data when also connecting to a native or web viewer.
+
 ## [1.5.0] - 2026-08-11
 
 ### Added
